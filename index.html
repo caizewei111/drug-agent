@@ -189,6 +189,7 @@
     // ---------- 状态 ----------
     const state = {
       mode: "text", // text | file
+      loading: false, // 是否正在分析中（防重复点击）
       fileText: { A: "", B: "" },
       fileName: { A: "", B: "" },
       settings: {
@@ -406,23 +407,38 @@
 
     // ---------- 开始对比 ----------
     async function startCompare() {
+      // 防重复点击：正在分析中则直接忽略
+      if (state.loading) return;
+
       const { a, b } = getInputTexts();
       if (!a || !b) {
         showActionHint("请确保两份药品说明书内容均已填写/上传", true);
         return;
       }
+
       showActionHint("");
-      showLoading(true, "正在调用智能体，请稍候……");
-      $("#resultsSection").hidden = true;
+      state.loading = true;
+      showLoading(true, "分析中…");
+
+      // 30 秒超时控制
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       try {
-        const result = await callAgent(a, b);
+        const result = await callAgent(a, b, controller.signal);
+        $("#resultsSection").hidden = true;
         renderResults(result);
         $("#resultsSection").hidden = false;
         $("#resultsSection").scrollIntoView({ behavior: "smooth", block: "start" });
       } catch (err) {
-        showActionHint("对比失败：" + err.message, true);
+        if (err.name === "AbortError") {
+          showActionHint("请求超时，请重试", true);
+        } else {
+          showActionHint("对比失败：" + err.message + "（可重试）", true);
+        }
       } finally {
+        clearTimeout(timeoutId);
+        state.loading = false;
         showLoading(false);
       }
     }
@@ -440,7 +456,7 @@
     }
 
     // ---------- 调用智能体 API（经同源代理 /api/agent） ----------
-    async function callAgent(textA, textB) {
+    async function callAgent(textA, textB, signal) {
       const { apiUrl, apiKey } = state.settings;
       const prompt = buildPrompt(textA, textB);
 
@@ -453,8 +469,11 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
+          signal, // 用于超时中止
         });
       } catch (netErr) {
+        // 超时中止会抛 AbortError，向上传递由调用方处理
+        if (netErr.name === "AbortError") throw netErr;
         throw new Error("网络请求失败，请检查网络连接");
       }
 

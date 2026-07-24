@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>💊 药品说明书智能对比助手</title>
+  <!--
+    Tailwind CSS v3 — 使用 cdnjs 稳定压缩版，适用于公网生产环境
+    添加 crossorigin="anonymous" 确保跨域安全
+  -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <!-- marked.js (CDN) 用于渲染 Markdown -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
+  <style>
+    /* ================================================================
+     *  全局样式 & Tailwind 补充
+     * ================================================================ */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans SC", sans-serif;
+      background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #dbeafe 100%);
+      min-height: 100vh;
+    }
+
+    /* ================================================================
+     *  文件上传虚线框
+     * ================================================================ */
+    .upload-zone {
+      border: 2px dashed #cbd5e1;
+      border-radius: 12px;
+      padding: 2rem 1rem;
+      text-align: center;
+      transition: all 0.3s ease;
+      cursor: pointer;
+      background: #fafafa;
+      min-height: 180px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .upload-zone:hover {
+      border-color: #3b82f6;
+      background: #f0f7ff;
+    }
+    .upload-zone.dragover {
+      border-color: #3b82f6;
+      background: #eff6ff;
+      transform: scale(1.01);
+    }
+    .upload-zone.has-file {
+      border-color: #22c55e;
+      background: #f0fdf4;
+    }
+    .upload-zone .file-input { display: none; }
+    .upload-zone .upload-icon {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+      color: #94a3b8;
+    }
+    .upload-zone .upload-text { color: #64748b; font-size: 0.9rem; }
+    .upload-zone .upload-hint { color: #94a3b8; font-size: 0.8rem; margin-top: 0.25rem; }
+
+    /* 选中文件后的文件名与删除按钮 */
+    .file-info {
+      display: none;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+      padding: 0.4rem 0.75rem;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .file-info.show { display: flex; }
+    .file-info .file-name {
+      font-size: 0.85rem;
+      color: #1e293b;
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .file-info .delete-btn {
+      color: #ef4444;
+      cursor: pointer;
+      font-size: 1.1rem;
+      line-height: 1;
+      transition: color 0.2s;
+      background: none;
+      border: none;
+      padding: 0 2px;
+    }
+    .file-info .delete-btn:hover { color: #dc2626; }
+
+    /* ================================================================
+     *  按钮样式
+     * ================================================================ */
+    .btn-primary {
+      background: #22c55e;
+      color: #fff;
+      padding: 0.75rem 2.5rem;
+      border-radius: 12px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 14px rgba(34, 197, 94, 0.3);
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: #16a34a;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(34, 197, 94, 0.4);
+    }
+    .btn-primary:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+
+    /* ================================================================
+     *  结果展示区
+     * ================================================================ */
+    #resultArea { display: none; }
+    #resultArea.show { display: block; }
+
+    /* Markdown 渲染样式 */
+    #resultContent {
+      line-height: 1.8;
+      color: #1e293b;
+    }
+    #resultContent h1, #resultContent h2, #resultContent h3 {
+      margin-top: 1.2em;
+      margin-bottom: 0.6em;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    #resultContent h1 { font-size: 1.5rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.3em; }
+    #resultContent h2 { font-size: 1.3rem; }
+    #resultContent h3 { font-size: 1.1rem; }
+    #resultContent p { margin-bottom: 0.8em; }
+    #resultContent ul, #resultContent ol { padding-left: 1.5em; margin-bottom: 0.8em; }
+    #resultContent li { margin-bottom: 0.3em; }
+    #resultContent strong { font-weight: 700; color: #0f172a; }
+    #resultContent table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+      font-size: 0.9rem;
+    }
+    #resultContent th, #resultContent td {
+      border: 1px solid #d1d5db;
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+    }
+    #resultContent th { background: #f1f5f9; font-weight: 600; }
+    #resultContent code {
+      background: #f1f5f9;
+      padding: 0.15em 0.4em;
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+    #resultContent pre {
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 1em;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 1em 0;
+    }
+    #resultContent pre code { background: transparent; color: inherit; padding: 0; }
+    #resultContent blockquote {
+      border-left: 4px solid #3b82f6;
+      padding-left: 1em;
+      color: #475569;
+      margin: 1em 0;
+    }
+    #resultContent hr { border: none; border-top: 1px solid #e2e8f0; margin: 1.5em 0; }
+
+    /* ================================================================
+     *  加载动画
+     * ================================================================ */
+    .spinner {
+      display: inline-block;
+      width: 1.2rem;
+      height: 1.2rem;
+      border: 2.5px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-right: 0.4rem;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ================================================================
+     *  设置弹窗 (Modal)
+     * ================================================================ */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(2px);
+    }
+    .modal-overlay.show { display: flex; }
+    .modal-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 2rem;
+      width: 90%;
+      max-width: 480px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+      animation: modalIn 0.25s ease;
+    }
+    @keyframes modalIn {
+      from { opacity: 0; transform: scale(0.95) translateY(10px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .modal-box h2 { font-size: 1.3rem; font-weight: 700; margin-bottom: 1.5rem; color: #0f172a; }
+    .modal-box label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 0.3rem;
+    }
+    .modal-box input {
+      width: 100%;
+      padding: 0.6rem 0.8rem;
+      border: 1.5px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      transition: border-color 0.2s;
+      outline: none;
+    }
+    .modal-box input:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+    }
+    .modal-box .form-group { margin-bottom: 1rem; }
+    .modal-box .modal-actions {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+      justify-content: flex-end;
+    }
+    .modal-box .modal-actions button {
+      padding: 0.5rem 1.5rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+    .modal-box .btn-save { background: #3b82f6; color: #fff; }
+    .modal-box .btn-save:hover { background: #2563eb; }
+    .modal-box .btn-cancel { background: #f1f5f9; color: #475569; }
+    .modal-box .btn-cancel:hover { background: #e2e8f0; }
+
+    /* ================================================================
+     *  Toast 提示
+     * ================================================================ */
+    .toast {
+      position: fixed;
+      top: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(-100px);
+      background: #1e293b;
+      color: #fff;
+      padding: 0.75rem 1.5rem;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      z-index: 2000;
+      opacity: 0;
+      transition: all 0.4s ease;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      max-width: 90%;
+      text-align: center;
+      pointer-events: none;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .toast.error { background: #dc2626; }
+    .toast.success { background: #16a34a; }
+
+    /* ================================================================
+     *  步骤指示器
+     * ================================================================ */
+    .step-indicator {
+      display: none;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 1rem;
+      background: #f8fafc;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+      color: #475569;
+      border: 1px solid #e2e8f0;
+    }
+    .step-indicator.show { display: flex; }
+    .step-indicator .step-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #94a3b8;
+      flex-shrink: 0;
+    }
+    .step-indicator .step-dot.active { background: #3b82f6; animation: pulse 1s infinite; }
+    .step-indicator .step-dot.done { background: #22c55e; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ================================================================
+       Toast 提示容器（全局错误/成功提示）
+  ================================================================ -->
+  <div id="toast" class="toast"></div>
+
+  <!-- ================================================================
+       顶部导航栏
+  ================================================================ -->
+  <nav class="bg-white bg-opacity-80 backdrop-blur-md shadow-sm border-b border-gray-200 sticky top-0 z-50">
+    <div class="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="text-2xl">💊</span>
+        <span class="text-lg font-bold text-gray-800">药品说明书智能对比助手</span>
+      </div>
+      <button id="settingsBtn" class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors">
+        <span>⚙️</span>
+        <span>设置</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ================================================================
+       主内容区
+  ================================================================ -->
+  <main class="max-w-5xl mx-auto px-4 py-8">
+
+    <!-- ===== 文件上传区 ===== -->
+    <section class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+      <!-- 药品 A -->
+      <div id="uploadZoneA" class="upload-zone">
+        <input type="file" id="fileInputA" class="file-input" accept=".pdf,.doc,.docx" />
+        <div class="upload-icon">📄</div>
+        <div class="upload-text font-medium">药品 A (PDF/Word)</div>
+        <div class="upload-hint">点击或拖拽选择文件</div>
+        <!-- 文件信息（选中后显示） -->
+        <div id="fileInfoA" class="file-info">
+          <span>📎</span>
+          <span id="fileNameA" class="file-name"></span>
+          <button id="deleteBtnA" class="delete-btn" title="删除文件">×</button>
+        </div>
+      </div>
+
+      <!-- 药品 B -->
+      <div id="uploadZoneB" class="upload-zone">
+        <input type="file" id="fileInputB" class="file-input" accept=".pdf,.doc,.docx" />
+        <div class="upload-icon">📄</div>
+        <div class="upload-text font-medium">药品 B (PDF/Word)</div>
+        <div class="upload-hint">点击或拖拽选择文件</div>
+        <!-- 文件信息（选中后显示） -->
+        <div id="fileInfoB" class="file-info">
+          <span>📎</span>
+          <span id="fileNameB" class="file-name"></span>
+          <button id="deleteBtnB" class="delete-btn" title="删除文件">×</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 操作区 ===== -->
+    <section class="flex flex-col items-center mb-8">
+      <button id="startBtn" class="btn-primary">
+        🚀 开始智能对比
+      </button>
+    </section>
+
+    <!-- ===== 步骤状态指示器 ===== -->
+    <div id="stepIndicator" class="step-indicator">
+      <span id="stepDot" class="step-dot"></span>
+      <span id="stepText">准备中...</span>
+    </div>
+
+    <!-- ===== 结果展示区（初始隐藏） ===== -->
+    <section id="resultArea">
+      <div class="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+        <div class="flex items-center gap-2 mb-4">
+          <span class="text-xl">📋</span>
+          <h2 class="text-lg font-bold text-gray-800">对比结果</h2>
+        </div>
+        <div id="resultContent" class="max-w-none"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================================================================
+       设置弹窗 (Modal)
+  ================================================================ -->
+  <div id="settingsModal" class="modal-overlay">
+    <div class="modal-box">
+      <h2>⚙️ 设置</h2>
+      <div class="form-group">
+        <label for="apiHost">API Host (接口域名)</label>
+        <input type="text" id="apiHost" placeholder="https://seaf.360.cn:30080" autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label for="agentId">Agent ID (智能体ID)</label>
+        <input type="text" id="agentId" placeholder="请输入智能体ID" autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label for="accessToken">Access Token (鉴权令牌)</label>
+        <!-- type="password" 确保 Token 输入时隐藏 -->
+        <input type="password" id="accessToken" placeholder="请输入 Access Token" autocomplete="off" />
+      </div>
+      <div class="modal-actions">
+        <button id="modalCancel" class="btn-cancel">取消</button>
+        <button id="modalSave" class="btn-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+   ======================== JavaScript =================================
+   ================================================================ -->
+  <script>
+    (function() {
+      'use strict';
+
+      /* ================================================================
+       *  常量配置区
+       *  根据接口文档定义各 API 端点路径
+       * ================================================================ */
+      const CONFIG = {
+        // API 路径（相对于 Host），严格遵循接口文档格式
+        API_PATH: {
+          UPLOAD:  '/api/v2/openapi/file/upload',   // 文件上传  POST
+          SESSION: '/api/v2/openapi/session',        // 新建会话  POST
+          CHAT:    '/api/v2/openapi/chat',           // 发起对话  POST (stream)
+        },
+        // localStorage 存储键名
+        STORAGE_KEY: 'drug_comparison_agent_settings',
+        // 对话查询内容
+        QUERY_TEXT: '请对比这两个药品说明书的差异',
+      };
+
+      /* ================================================================
+       *  DOM 引用
+       * ================================================================ */
+      const $ = (sel) => document.querySelector(sel);
+
+      // 文件上传
+      const uploadZoneA = $('#uploadZoneA');
+      const uploadZoneB = $('#uploadZoneB');
+      const fileInputA  = $('#fileInputA');
+      const fileInputB  = $('#fileInputB');
+      const fileInfoA   = $('#fileInfoA');
+      const fileInfoB   = $('#fileInfoB');
+      const fileNameA   = $('#fileNameA');
+      const fileNameB   = $('#fileNameB');
+      const deleteBtnA  = $('#deleteBtnA');
+      const deleteBtnB  = $('#deleteBtnB');
+
+      // 操作
+      const startBtn    = $('#startBtn');
+
+      // 结果
+      const resultArea  = $('#resultArea');
+      const resultContent = $('#resultContent');
+
+      // 步骤指示器
+      const stepIndicator = $('#stepIndicator');
+      const stepDot       = $('#stepDot');
+      const stepText      = $('#stepText');
+
+      // 设置弹窗
+      const settingsBtn    = $('#settingsBtn');
+      const settingsModal  = $('#settingsModal');
+      const modalCancel    = $('#modalCancel');
+      const modalSave      = $('#modalSave');
+      const inputHost      = $('#apiHost');
+      const inputAgentId   = $('#agentId');
+      const inputToken     = $('#accessToken');
+
+      // Toast
+      const toastEl = $('#toast');
+
+      /* ================================================================
+       *  状态变量
+       * ================================================================ */
+      let fileA = null;          // 药品 A 的 File 对象
+      let fileB = null;          // 药品 B 的 File 对象
+      let isProcessing = false;  // 是否正在处理中
+
+      /* ================================================================
+       *  Toast 提示（全局错误/成功/信息提示）
+       * ================================================================ */
+      let toastTimer = null;
+
+      /**
+       * 显示 Toast 提示条
+       * @param {string} message - 提示内容
+       * @param {'error'|'success'|'info'} type - 类型
+       */
+      function showToast(message, type = 'info') {
+        clearTimeout(toastTimer);
+        toastEl.textContent = message;
+        toastEl.className = 'toast';
+        if (type === 'error') toastEl.classList.add('error');
+        if (type === 'success') toastEl.classList.add('success');
+        // 强制重排后显示动画
+        void toastEl.offsetWidth;
+        toastEl.classList.add('show');
+        toastTimer = setTimeout(() => toastEl.classList.remove('show'), 4000);
+      }
+
+      /* ================================================================
+       *  设置管理 (localStorage)
+       * ================================================================ */
+
+      /**
+       * 默认配置（用户首次使用时预填，可在设置弹窗中修改）
+       * 智能体接口：https://seaf.360.cn:30080/api/v2/openapi/agent_detail
+       */
+      const DEFAULT_SETTINGS = {
+        host:    'https://seaf.360.cn:30080',
+        agentId: '7606',
+        token:   'AckuHVUgqrA2kR8lvrrFXzphmOkmgyOS',
+      };
+
+      /** 从 localStorage 加载设置并回填表单（无保存记录时使用默认值） */
+      function loadSettings() {
+        try {
+          const saved = localStorage.getItem(CONFIG.STORAGE_KEY);
+          if (saved) {
+            const data = JSON.parse(saved);
+            inputHost.value    = data.host || DEFAULT_SETTINGS.host;
+            inputAgentId.value = data.agentId || DEFAULT_SETTINGS.agentId;
+            inputToken.value   = data.token || DEFAULT_SETTINGS.token;
+          } else {
+            // 首次使用，填入默认配置
+            inputHost.value    = DEFAULT_SETTINGS.host;
+            inputAgentId.value = DEFAULT_SETTINGS.agentId;
+            inputToken.value   = DEFAULT_SETTINGS.token;
+            // 自动保存默认配置到 localStorage
+            saveSettings();
+          }
+        } catch (e) { /* ignore */ }
+      }
+
+      /** 将当前表单设置保存到 localStorage */
+      function saveSettings() {
+        const data = {
+          host:    inputHost.value.trim(),
+          agentId: inputAgentId.value.trim(),
+          token:   inputToken.value.trim(),
+        };
+        localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(data));
+      }
+
+      /** 获取当前设置对象 */
+      function getSettings() {
+        return {
+          host:    inputHost.value.trim(),
+          agentId: inputAgentId.value.trim(),
+          token:   inputToken.value.trim(),
+        };
+      }
+
+      // 页面加载时自动回填已保存的设置
+      loadSettings();
+
+      /* ================================================================
+       *  文件上传区域交互
+       * ================================================================ */
+
+      /**
+       * 处理文件选择后的 UI 更新
+       * @param {'A'|'B'} side - 药品侧
+       * @param {File|null} file - 选中的文件
+       */
+      function handleFileSelect(side, file) {
+        const zone   = side === 'A' ? uploadZoneA : uploadZoneB;
+        const info   = side === 'A' ? fileInfoA   : fileInfoB;
+        const nameEl = side === 'A' ? fileNameA   : fileNameB;
+
+        if (file) {
+          if (side === 'A') fileA = file; else fileB = file;
+          nameEl.textContent = file.name;
+          info.classList.add('show');
+          zone.classList.add('has-file');
+        } else {
+          if (side === 'A') fileA = null; else fileB = null;
+          nameEl.textContent = '';
+          info.classList.remove('show');
+          zone.classList.remove('has-file');
+        }
+      }
+
+      /**
+       * 触发隐藏的文件输入框
+       * @param {'A'|'B'} side
+       */
+      function triggerFileInput(side) {
+        const input = side === 'A' ? fileInputA : fileInputB;
+        input.value = '';
+        input.click();
+      }
+
+      // ---- 点击虚线框触发文件选择 ----
+      uploadZoneA.addEventListener('click', (e) => {
+        if (e.target.closest('.delete-btn')) return;
+        triggerFileInput('A');
+      });
+      uploadZoneB.addEventListener('click', (e) => {
+        if (e.target.closest('.delete-btn')) return;
+        triggerFileInput('B');
+      });
+
+      // ---- 文件输入 change 事件 ----
+      fileInputA.addEventListener('change', () => {
+        handleFileSelect('A', fileInputA.files && fileInputA.files[0] || null);
+      });
+      fileInputB.addEventListener('change', () => {
+        handleFileSelect('B', fileInputB.files && fileInputB.files[0] || null);
+      });
+
+      // ---- 删除文件 ----
+      deleteBtnA.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fileInputA.value = '';
+        handleFileSelect('A', null);
+      });
+      deleteBtnB.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fileInputB.value = '';
+        handleFileSelect('B', null);
+      });
+
+      // ---- 拖拽上传支持 ----
+      function setupDragDrop(zone, side) {
+        const input = side === 'A' ? fileInputA : fileInputB;
+
+        zone.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          zone.classList.add('dragover');
+        });
+        zone.addEventListener('dragleave', () => {
+          zone.classList.remove('dragover');
+        });
+        zone.addEventListener('drop', (e) => {
+          e.preventDefault();
+          zone.classList.remove('dragover');
+          const files = e.dataTransfer.files;
+          if (files && files.length > 0) {
+            const file = files[0];
+            const validTypes = ['.pdf', '.doc', '.docx'];
+            const ext = '.' + file.name.split('.').pop().toLowerCase();
+            if (!validTypes.includes(ext)) {
+              showToast('仅支持 PDF / Word 格式文件', 'error');
+              return;
+            }
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            input.files = dt.files;
+            handleFileSelect(side, file);
+          }
+        });
+      }
+      setupDragDrop(uploadZoneA, 'A');
+      setupDragDrop(uploadZoneB, 'B');
+
+      /* ================================================================
+       *  设置弹窗
+       * ================================================================ */
+
+      settingsBtn.addEventListener('click', () => { settingsModal.classList.add('show'); });
+
+      modalCancel.addEventListener('click', () => {
+        loadSettings(); // 取消时恢复已保存的值
+        settingsModal.classList.remove('show');
+      });
+
+      settingsModal.addEventListener('click', (e) => {
+        if (e.target === settingsModal) {
+          loadSettings();
+          settingsModal.classList.remove('show');
+        }
+      });
+
+      modalSave.addEventListener('click', () => {
+        const host = inputHost.value.trim();
+        const agentId = inputAgentId.value.trim();
+        const token = inputToken.value.trim();
+
+        if (!host || !agentId || !token) {
+          showToast('请完整填写所有配置项', 'error');
+          return;
+        }
+
+        saveSettings();
+        settingsModal.classList.remove('show');
+        showToast('设置已保存', 'success');
+      });
+
+      /* ================================================================
+       *  步骤指示器
+       * ================================================================ */
+
+      /**
+       * 更新步骤指示器状态
+       * @param {string} text - 步骤描述
+       * @param {'pending'|'active'|'done'} status - 状态
+       */
+      function updateStep(text, status = 'active') {
+        stepIndicator.classList.add('show');
+        stepText.textContent = text;
+        stepDot.className = 'step-dot';
+        if (status === 'active') stepDot.classList.add('active');
+        if (status === 'done') stepDot.classList.add('done');
+      }
+
+      function hideStep() { stepIndicator.classList.remove('show'); }
+
+      /* ================================================================
+       *  核心工具函数
+       * ================================================================ */
+
+      /**
+       * 健壮的 URL 拼接函数
+       * 自动处理 base 末尾是否有 / 以及 path 开头是否有 /
+       * 确保最终 URL 格式正确，不会出现双斜杠或路径断裂
+       *
+       * @param {string} base   - API 基础域名，如 "http://api.com" 或 "http://api.com/"
+       * @param {string} path   - API 路径，如 "/api/v2/openapi/file/upload"
+       * @returns {string}      - 完整拼接后的 URL
+       *
+       * 示例：
+       *   buildUrl("http://api.com", "/api/v2/openapi/file/upload")
+       *     => "http://api.com/api/v2/openapi/file/upload"
+       *   buildUrl("http://api.com/", "/api/v2/openapi/file/upload")
+       *     => "http://api.com/api/v2/openapi/file/upload"
+       */
+      function buildUrl(base, path) {
+        // 去除 base 末尾的 /
+        const cleanBase = base.replace(/\/+$/, '');
+        // 确保 path 以 / 开头
+        const cleanPath = path.startsWith('/') ? path : '/' + path;
+        return cleanBase + cleanPath;
+      }
+
+      /* ================================================================
+       *  前置检查
+       * ================================================================ */
+
+      function checkSettings() {
+        const settings = getSettings();
+        if (!settings.host) {
+          showToast('请先在设置中配置 API Host', 'error');
+          settingsModal.classList.add('show');
+          return false;
+        }
+        if (!settings.agentId) {
+          showToast('请先在设置中配置 Agent ID', 'error');
+          settingsModal.classList.add('show');
+          return false;
+        }
+        if (!settings.token) {
+          showToast('请先在设置中配置 Access Token', 'error');
+          settingsModal.classList.add('show');
+          return false;
+        }
+        return true;
+      }
+
+      function checkFiles() {
+        if (!fileA) {
+          showToast('请上传药品 A 的说明书文件', 'error');
+          return false;
+        }
+        if (!fileB) {
+          showToast('请上传药品 B 的说明书文件', 'error');
+          return false;
+        }
+        return true;
+      }
+
+      /* ================================================================
+       *  第一步：文件上传
+       *  接口：POST /api/v2/openapi/file/upload
+       *  格式：multipart/form-data (FormData)
+       *  注意：不手动设置 Content-Type，让浏览器自动带 boundary
+       * ================================================================ */
+
+      /**
+       * 上传单个文件到服务器
+       * @param {File} file     - 待上传的文件
+       * @param {string} host   - API 域名
+       * @param {string} token  - 鉴权令牌
+       * @returns {Promise<string>} 返回文件 URL
+       */
+      async function uploadFile(file, host, token) {
+        // 使用 buildUrl 安全拼接，避免路径断裂
+        const url = buildUrl(host, CONFIG.API_PATH.UPLOAD);
+
+        // 【调试日志】打印完整请求 URL，方便排查 404 问题
+        console.log('[Upload] 请求 URL:', url);
+        console.log('[Upload] 文件名:', file.name);
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            // 不设置 Content-Type，让浏览器自动生成 multipart/form-data + boundary
+          },
+          body: formData,
+        });
+
+        // ---- 增强的错误处理：非 200 状态码直接抛出详细错误 ----
+        if (!response.ok) {
+          let detail = '';
+          if (response.status === 404) {
+            detail = '服务器未找到文件上传接口，请检查 API Host 配置是否正确';
+          } else if (response.status === 401) {
+            detail = '鉴权失败，请检查 Access Token 是否正确';
+          } else if (response.status === 500) {
+            detail = '服务器内部错误，请联系管理员';
+          } else {
+            detail = `HTTP ${response.status} ${response.statusText}`;
+          }
+          throw new Error(`文件上传失败 (${response.status}): ${detail}`);
+        }
+
+        const result = await response.json();
+
+        // 检查业务状态码
+        if (result.context && result.context.code !== 0) {
+          throw new Error(`文件上传失败: ${result.context.message || '未知错误'}`);
+        }
+
+        if (!result.data || !result.data.url) {
+          throw new Error('文件上传响应缺少 file_url');
+        }
+
+        console.log('[Upload] 成功, file_url:', result.data.url);
+        return result.data.url;
+      }
+
+      /* ================================================================
+       *  第二步：创建会话
+       *  接口：POST /api/v2/openapi/session
+       * ================================================================ */
+
+      /**
+       * 创建新会话
+       * @param {string} host     - API 域名
+       * @param {string} token    - 鉴权令牌
+       * @param {string} agentId  - 智能体 ID
+       * @returns {Promise<string>} 返回 session_id
+       */
+      async function createSession(host, token, agentId) {
+        const url = buildUrl(host, CONFIG.API_PATH.SESSION);
+
+        console.log('[Session] 请求 URL:', url);
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({ agent_id: agentId }),
+        });
+
+        if (!response.ok) {
+          let detail = '';
+          if (response.status === 404) {
+            detail = '服务器未找到会话接口，请检查 API Host 配置';
+          } else if (response.status === 401) {
+            detail = '鉴权失败，请检查 Access Token';
+          } else {
+            detail = `HTTP ${response.status} ${response.statusText}`;
+          }
+          throw new Error(`创建会话失败 (${response.status}): ${detail}`);
+        }
+
+        const result = await response.json();
+
+        if (result.context && result.context.code !== 0) {
+          throw new Error(`创建会话失败: ${result.context.message || '未知错误'}`);
+        }
+
+        if (!result.data || !result.data.session_id) {
+          throw new Error('创建会话响应缺少 session_id');
+        }
+
+        console.log('[Session] 成功, session_id:', result.data.session_id);
+        return result.data.session_id;
+      }
+
+      /* ================================================================
+       *  第三步：发起流式对话
+       *  接口：POST /api/v2/openapi/chat
+       *  关键参数：stream: true
+       *
+       *  响应处理：使用 ReadableStream 读取 SSE 数据流
+       *  SSE 格式：data: { "content": "..." }
+       *  逐块解析并实时追加到 DOM，实现打字机效果
+       * ================================================================ */
+
+      /**
+       * 发起流式对话并实时渲染结果
+       * @param {string}   host       - API 域名
+       * @param {string}   token      - 鉴权令牌
+       * @param {string}   sessionId  - 会话 ID
+       * @param {string[]} fileUrls   - 文件 URL 数组
+       * @param {function} onContent  - 内容回调，接收累积的完整 Markdown 文本
+       */
+      async function startChatStream(host, token, sessionId, fileUrls, onContent) {
+        const url = buildUrl(host, CONFIG.API_PATH.CHAT);
+
+        console.log('[Chat] 请求 URL:', url);
+        console.log('[Chat] session_id:', sessionId);
+        console.log('[Chat] files:', fileUrls);
+
+        const files = fileUrls.map(url => ({ url }));
+
+        const payload = {
+          query: CONFIG.QUERY_TEXT,
+          files: files,
+          stream: true,
+          session_id: sessionId,
+        };
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          let detail = '';
+          if (response.status === 404) {
+            detail = '服务器未找到对话接口，请检查 API Host 配置';
+          } else if (response.status === 401) {
+            detail = '鉴权失败，请检查 Access Token';
+          } else {
+            detail = `HTTP ${response.status} ${response.statusText}`;
+          }
+          throw new Error(`发起对话失败 (${response.status}): ${detail}`);
+        }
+
+        // ============================================================
+        //  流式数据读取核心逻辑
+        //  使用 response.body.getReader() 逐块读取二进制流
+        //  按 SSE 协议解析：每行以 "data: " 开头，后接 JSON
+        // ============================================================
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';               // 缓存不完整的行
+        let accumulatedContent = '';   // 累积的完整 Markdown 文本
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // 将二进制块解码为字符串
+          buffer += decoder.decode(value, { stream: true });
+
+          // 按换行符分割
+          const lines = buffer.split('\n');
+          // 最后一个元素可能是不完整的行，保留到下次处理
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            // SSE 格式：data: {...json...}
+            if (trimmed.startsWith('data: ')) {
+              const jsonStr = trimmed.slice(6); // 去掉 "data: " 前缀
+
+              try {
+                const parsed = JSON.parse(jsonStr);
+
+                // 兼容多种可能的返回结构
+                let content = '';
+
+                // 情况1：直接有 content 字段
+                if (parsed.content) {
+                  content = parsed.content;
+                }
+                // 情况2：通过 message.content
+                else if (parsed.message && parsed.message.content) {
+                  content = parsed.message.content;
+                }
+                // 情况3：data 是数组，取第一个消息的 content
+                else if (Array.isArray(parsed.data) && parsed.data.length > 0) {
+                  const first = parsed.data[0];
+                  if (first.message && first.message.content) {
+                    content = first.message.content;
+                  }
+                }
+
+                if (content) {
+                  accumulatedContent += content;
+                  onContent(accumulatedContent);
+                }
+              } catch (e) {
+                // 个别 JSON 解析失败时忽略（可能是不完整的行）
+                console.warn('[Chat] SSE 数据解析跳过:', e.message);
+              }
+            }
+          }
+        }
+
+        // 处理 buffer 中可能残留的最后一个数据行
+        if (buffer.trim()) {
+          const trimmed = buffer.trim();
+          if (trimmed.startsWith('data: ')) {
+            try {
+              const parsed = JSON.parse(trimmed.slice(6));
+              let content = '';
+              if (parsed.content) content = parsed.content;
+              else if (parsed.message && parsed.message.content) content = parsed.message.content;
+              else if (Array.isArray(parsed.data) && parsed.data.length > 0) {
+                const first = parsed.data[0];
+                if (first.message && first.message.content) content = first.message.content;
+              }
+              if (content) {
+                accumulatedContent += content;
+                onContent(accumulatedContent);
+              }
+            } catch (e) { /* ignore */ }
+          }
+        }
+
+        console.log('[Chat] 流式读取完成, 总字符数:', accumulatedContent.length);
+      }
+
+      /* ================================================================
+       *  "开始智能对比" 主流程
+       *  严格按以下顺序执行：
+       *    前置检查 → 文件上传(并发) → 创建会话 → 流式对话
+       * ================================================================ */
+
+      startBtn.addEventListener('click', async () => {
+        // 防止重复点击
+        if (isProcessing) return;
+
+        // ---- 前置检查 ----
+        if (!checkSettings()) return;
+        if (!checkFiles()) return;
+
+        // ---- 开始处理 ----
+        isProcessing = true;
+        startBtn.disabled = true;
+        startBtn.innerHTML = '<span class="spinner"></span> 处理中...';
+
+        // 重置结果区域
+        resultArea.classList.remove('show');
+        resultContent.innerHTML = '';
+        hideStep();
+
+        const settings = getSettings();
+        const host = settings.host;
+        const token = settings.token;
+        const agentId = settings.agentId;
+
+        try {
+          // ============================================================
+          //  第一步：并发上传文件 A 和 B
+          //  使用 Promise.all 实现并发上传，提高效率
+          // ============================================================
+          updateStep('📤 正在上传文件...', 'active');
+
+          const [urlA, urlB] = await Promise.all([
+            uploadFile(fileA, host, token),
+            uploadFile(fileB, host, token),
+          ]);
+
+          updateStep('✅ 文件上传完成', 'done');
+
+          // ============================================================
+          //  第二步：创建会话
+          // ============================================================
+          updateStep('🔗 正在创建会话...', 'active');
+          const sessionId = await createSession(host, token, agentId);
+          updateStep('✅ 会话创建成功', 'done');
+
+          // ============================================================
+          //  第三步：发起流式对话
+          // ============================================================
+          updateStep('🤖 智能体正在分析...', 'active');
+
+          // 显示结果区域
+          resultArea.classList.add('show');
+
+          // 开始流式对话，实时更新内容（打字机效果）
+          await startChatStream(host, token, sessionId, [urlA, urlB], (fullText) => {
+            // 使用 marked.js 将 Markdown 渲染为 HTML
+            if (typeof marked !== 'undefined') {
+              resultContent.innerHTML = marked.parse(fullText);
+            } else {
+              // marked 未加载时，直接显示纯文本
+              resultContent.textContent = fullText;
+            }
+          });
+
+          updateStep('✅ 对比完成', 'done');
+          showToast('对比完成！', 'success');
+
+        } catch (error) {
+          console.error('[Error] 处理出错:', error);
+          // 全局错误捕获：在界面上方显示红色 Toast
+          showToast(error.message, 'error');
+          updateStep('❌ ' + error.message, 'active');
+        } finally {
+          // 恢复按钮状态
+          isProcessing = false;
+          startBtn.disabled = false;
+          startBtn.innerHTML = '🚀 开始智能对比';
+        }
+      });
+
+      /* ================================================================
+       *  初始化日志
+       * ================================================================ */
+      console.log('💊 药品说明书智能对比助手已加载 (生产模式)');
+      console.log('ℹ️ 请先点击右上角"设置"配置 API 信息，然后上传文件并点击"开始智能对比"');
+
+    })();
+  </script>
+
+</body>
+</html>
